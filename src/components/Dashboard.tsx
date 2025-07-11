@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Play, 
-  Settings, 
+  Settings as SettingsIcon, 
   LogOut, 
   Plus,
   Calendar,

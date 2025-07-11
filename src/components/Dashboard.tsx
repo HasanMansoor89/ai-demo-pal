@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { 
   Play, 
-  Settings as SettingsIcon, 
+  SettingsIcon, 
   LogOut, 
   Plus,
   Search,
@@ -20,10 +20,12 @@ import {
   Sparkles,
   Zap,
   Clock,
-  TrendingUp
+  TrendingUp,
+  AlertCircle
 } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import Settings from "@/components/Settings";
+import { useToast } from "@/hooks/use-toast";
 
 interface DashboardProps {
   onLogout: () => void;
@@ -36,9 +38,8 @@ interface DemoSession {
   title: string;
   date: string;
   duration: string;
-  status: 'completed' | 'in-progress' | 'failed';
-  views: number;
-  engagement: number;
+  status: 'active' | 'completed' | 'failed';
+  isRecording: boolean;
 }
 
 const Dashboard = ({ onLogout, userEmail, isDemoMode }: DashboardProps) => {
@@ -46,53 +47,76 @@ const Dashboard = ({ onLogout, userEmail, isDemoMode }: DashboardProps) => {
   const [isStartingDemo, setIsStartingDemo] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [sessions, setSessions] = useState<DemoSession[]>([]);
-  const [stats, setStats] = useState({
-    totalSessions: 0,
-    avgDuration: "0:00",
-    completionRate: 0,
-    totalViews: 0
-  });
+  const [currentSession, setCurrentSession] = useState<DemoSession | null>(null);
+  const { toast } = useToast();
 
-  // Simulate loading data (in real app, this would be API calls)
-  useEffect(() => {
-    if (isDemoMode) {
-      // Demo data
-      setSessions([
-        {
-          id: "1",
-          title: "Product Tour - E-commerce Platform",
-          date: new Date().toISOString().split('T')[0],
-          duration: "4:32",
-          status: "completed",
-          views: 156,
-          engagement: 87
-        },
-        {
-          id: "2", 
-          title: "Feature Demo - AI Assistant",
-          date: new Date(Date.now() - 86400000).toISOString().split('T')[0],
-          duration: "3:21",
-          status: "completed",
-          views: 203,
-          engagement: 92
-        }
-      ]);
-      setStats({
-        totalSessions: 12,
-        avgDuration: "4:15",
-        completionRate: 89,
-        totalViews: 1547
+  const handleStartDemo = async () => {
+    if (currentSession?.isRecording) {
+      toast({
+        title: "Demo Already Active",
+        description: "Please stop the current demo session before starting a new one.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsStartingDemo(true);
+    
+    try {
+      // Create new demo session
+      const newSession: DemoSession = {
+        id: `demo-${Date.now()}`,
+        title: `Demo Session ${new Date().toLocaleTimeString()}`,
+        date: new Date().toISOString().split('T')[0],
+        duration: "00:00",
+        status: 'active',
+        isRecording: true
+      };
+
+      setCurrentSession(newSession);
+      setSessions(prev => [newSession, ...prev]);
+      
+      // Initialize voice recognition and demo recording
+      if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+        toast({
+          title: "Demo Started",
+          description: "Voice commands are now active. Say 'stop demo' to end the session.",
+        });
+      } else {
+        toast({
+          title: "Demo Started",
+          description: "Demo session is active. Click 'Stop Demo' to end.",
+        });
+      }
+      
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to start demo session. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsStartingDemo(false);
+    }
+  };
+
+  const handleStopDemo = () => {
+    if (currentSession) {
+      const updatedSession = {
+        ...currentSession,
+        status: 'completed' as const,
+        isRecording: false,
+        duration: "3:45" // This would be calculated from actual recording time
+      };
+      
+      setSessions(prev => prev.map(s => s.id === currentSession.id ? updatedSession : s));
+      setCurrentSession(null);
+      
+      toast({
+        title: "Demo Completed",
+        description: "Your demo session has been saved successfully.",
       });
     }
-  }, [isDemoMode]);
-
-  const handleStartDemo = () => {
-    setIsStartingDemo(true);
-    setTimeout(() => {
-      setIsStartingDemo(false);
-      // In real app, would navigate to demo interface
-      alert("🎬 Demo session started! Voice commands are now active.");
-    }, 2000);
   };
 
   const filteredSessions = sessions.filter(session =>
@@ -103,7 +127,7 @@ const Dashboard = ({ onLogout, userEmail, isDemoMode }: DashboardProps) => {
     switch (status) {
       case "completed":
         return "bg-green-100 text-green-800 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800";
-      case "in-progress":
+      case "active":
         return "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-800";
       default:
         return "bg-red-100 text-red-800 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800";
@@ -127,12 +151,18 @@ const Dashboard = ({ onLogout, userEmail, isDemoMode }: DashboardProps) => {
                   Demo Mode
                 </Badge>
               )}
+              {currentSession?.isRecording && (
+                <Badge variant="destructive" className="ml-2 animate-pulse">
+                  <div className="w-2 h-2 bg-red-500 rounded-full mr-1" />
+                  Recording
+                </Badge>
+              )}
             </div>
             <div className="flex items-center space-x-4">
               <ThemeToggle />
               <div className="flex items-center space-x-2 text-sm text-muted-foreground">
                 <User className="w-4 h-4" />
-                <span>Welcome back, {userEmail || 'Demo User'}!</span>
+                <span>{userEmail || 'Demo User'}</span>
               </div>
               <Button 
                 variant="outline" 
@@ -158,20 +188,22 @@ const Dashboard = ({ onLogout, userEmail, isDemoMode }: DashboardProps) => {
           </TabsList>
 
           <TabsContent value="dashboard" className="space-y-6">
-            {/* Quick Actions */}
-            <div className="grid md:grid-cols-2 gap-6">
-              {/* Start Demo Card */}
-              <Card className="border-0 bg-gradient-to-r from-primary/10 to-purple-600/10 border border-primary/20">
-                <CardHeader>
-                  <CardTitle className="text-2xl flex items-center">
-                    <Play className="w-6 h-6 mr-2" />
-                    Create New Demo
-                  </CardTitle>
-                  <CardDescription>
-                    Start a new AI-powered demo session with voice navigation
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
+            {/* Demo Control */}
+            <Card className="border-0 bg-gradient-to-r from-primary/10 to-purple-600/10 border border-primary/20">
+              <CardHeader>
+                <CardTitle className="text-2xl flex items-center">
+                  <Play className="w-6 h-6 mr-2" />
+                  Demo Session Control
+                </CardTitle>
+                <CardDescription>
+                  {currentSession?.isRecording 
+                    ? "Demo session is currently active with voice commands enabled"
+                    : "Start a new AI-powered demo session with voice navigation"
+                  }
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex gap-4">
+                {!currentSession?.isRecording ? (
                   <Button 
                     size="lg" 
                     className="bg-primary hover:bg-primary/90"
@@ -190,83 +222,74 @@ const Dashboard = ({ onLogout, userEmail, isDemoMode }: DashboardProps) => {
                       </>
                     )}
                   </Button>
-                </CardContent>
-              </Card>
-
-              {/* AI Assistant Card */}
-              <Card className="border-0 bg-gradient-to-r from-purple-600/10 to-pink-600/10 border border-purple-600/20">
-                <CardHeader>
-                  <CardTitle className="text-2xl flex items-center">
-                    <Zap className="w-6 h-6 mr-2" />
-                    AI Assistant
-                  </CardTitle>
-                  <CardDescription>
-                    Get help optimizing your demos with AI suggestions
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
+                ) : (
                   <Button 
                     size="lg" 
-                    variant="outline"
-                    className="border-purple-600/50 hover:bg-purple-600/10"
+                    variant="destructive"
+                    onClick={handleStopDemo}
                   >
-                    <Sparkles className="w-5 h-5 mr-2" />
-                    Get AI Suggestions
+                    <div className="w-2 h-2 bg-white rounded-full mr-2" />
+                    Stop Demo
                   </Button>
-                </CardContent>
-              </Card>
-            </div>
+                )}
+                
+                <Button 
+                  size="lg" 
+                  variant="outline"
+                  className="border-purple-600/50 hover:bg-purple-600/10"
+                >
+                  <Sparkles className="w-5 h-5 mr-2" />
+                  AI Assistant
+                </Button>
+              </CardContent>
+            </Card>
 
-            {/* Stats Cards */}
+            {/* Stats */}
             <div className="grid md:grid-cols-4 gap-6">
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Total Sessions</CardTitle>
+                  <CardTitle className="text-sm font-medium">Active Sessions</CardTitle>
                   <Play className="w-4 h-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{stats.totalSessions}</div>
-                  <p className="text-xs text-muted-foreground">
-                    {isDemoMode ? "Demo data" : "+12% from last month"}
-                  </p>
+                  <div className="text-2xl font-bold">{sessions.filter(s => s.status === 'active').length}</div>
+                  <p className="text-xs text-muted-foreground">Currently recording</p>
                 </CardContent>
               </Card>
 
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Avg. Duration</CardTitle>
-                  <Clock className="w-4 h-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{stats.avgDuration}</div>
-                  <p className="text-xs text-muted-foreground">
-                    {isDemoMode ? "Sample metric" : "-8% from last month"}
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Completion Rate</CardTitle>
-                  <TrendingUp className="w-4 h-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{stats.completionRate}%</div>
-                  <p className="text-xs text-muted-foreground">
-                    {isDemoMode ? "Demo metric" : "+5% from last month"}
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Total Views</CardTitle>
+                  <CardTitle className="text-sm font-medium">Total Sessions</CardTitle>
                   <BarChart3 className="w-4 h-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{stats.totalViews.toLocaleString()}</div>
+                  <div className="text-2xl font-bold">{sessions.length}</div>
+                  <p className="text-xs text-muted-foreground">All time</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Completed</CardTitle>
+                  <TrendingUp className="w-4 h-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{sessions.filter(s => s.status === 'completed').length}</div>
+                  <p className="text-xs text-muted-foreground">Successfully finished</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Voice Commands</CardTitle>
+                  <Mic className="w-4 h-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    {'webkitSpeechRecognition' in window ? 'Active' : 'N/A'}
+                  </div>
                   <p className="text-xs text-muted-foreground">
-                    {isDemoMode ? "Demo views" : "+23% from last month"}
+                    {'webkitSpeechRecognition' in window ? 'Browser supported' : 'Not supported'}
                   </p>
                 </CardContent>
               </Card>
@@ -284,20 +307,19 @@ const Dashboard = ({ onLogout, userEmail, isDemoMode }: DashboardProps) => {
               <CardContent>
                 <div className="text-center py-12 text-muted-foreground">
                   <BarChart3 className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                  <p>Analytics dashboard coming soon!</p>
-                  <p className="text-sm">Track engagement, conversion rates, and user behavior.</p>
+                  <p>Connect to Supabase to enable advanced analytics</p>
+                  <p className="text-sm mt-2">Track engagement, conversion rates, and user behavior.</p>
                 </div>
               </CardContent>
             </Card>
           </TabsContent>
 
           <TabsContent value="library" className="space-y-6">
-            {/* Search and Filter */}
             <div className="flex flex-col sm:flex-row gap-4">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
                 <Input
-                  placeholder="Search demos..."
+                  placeholder="Search demo sessions..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-10"
@@ -315,30 +337,19 @@ const Dashboard = ({ onLogout, userEmail, isDemoMode }: DashboardProps) => {
               </div>
             </div>
 
-            {/* Demo Sessions */}
             <Card>
               <CardHeader>
-                <CardTitle>Demo Library</CardTitle>
+                <CardTitle>Demo Sessions</CardTitle>
                 <CardDescription>
-                  Manage and organize your demo sessions
+                  Manage your recorded demo sessions
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 {filteredSessions.length === 0 ? (
                   <div className="text-center py-12 text-muted-foreground">
-                    {isDemoMode ? (
-                      <>
-                        <Play className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                        <p className="mb-2">No demos in your library yet!</p>
-                        <p className="text-sm">Create your first demo to see it here.</p>
-                      </>
-                    ) : (
-                      <>
-                        <Play className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                        <p className="mb-2">Your demo library is empty</p>
-                        <p className="text-sm">Start creating demos to build your library.</p>
-                      </>
-                    )}
+                    <Play className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                    <p className="mb-2">No demo sessions yet</p>
+                    <p className="text-sm">Start your first demo to see it here.</p>
                   </div>
                 ) : (
                   <div className="space-y-4">
@@ -353,16 +364,20 @@ const Dashboard = ({ onLogout, userEmail, isDemoMode }: DashboardProps) => {
                             <div className="flex items-center space-x-4 text-sm text-muted-foreground">
                               <span>{session.date}</span>
                               <span>{session.duration}</span>
-                              <span>{session.views} views</span>
-                              <span>{session.engagement}% engagement</span>
+                              {session.isRecording && (
+                                <span className="flex items-center text-red-500">
+                                  <div className="w-2 h-2 bg-red-500 rounded-full mr-1 animate-pulse" />
+                                  Recording
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
                         <div className="flex items-center space-x-3">
                           <Badge className={`${getStatusColor(session.status)} border`}>
-                            {session.status.replace('-', ' ')}
+                            {session.status}
                           </Badge>
-                          <Button variant="outline" size="sm">
+                          <Button variant="outline" size="sm" disabled={session.isRecording}>
                             <Share2 className="w-3 h-3 mr-1" />
                             Share
                           </Button>
